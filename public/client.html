@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WC Radio Simulator — Ukraine War Radio Study</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/dark/main.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #viewDiv { height: 100%; width: 100%; }
+
+    #legend {
+      position: absolute; top: 12px; right: 12px; z-index: 999;
+      background: rgba(0,0,0,0.85); color: #eee; padding: 14px 18px;
+      border-radius: 8px; font: 13px/1.6 sans-serif; min-width: 200px;
+      pointer-events: none;
+    }
+    #legend h3 { margin-bottom: 8px; font-size: 14px; color: #fff; }
+    #legend .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+    #legend .swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+    #legend .badge { font-size: 11px; color: #999; }
+
+    #controls {
+      position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+      z-index: 999; background: rgba(0,0,0,0.8); padding: 10px 18px;
+      border-radius: 8px; font: 13px sans-serif; color: #ddd;
+      display: flex; gap: 14px; align-items: center; pointer-events: auto;
+    }
+    #controls label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    #controls input[type="checkbox"] { accent-color: #4fc3f7; }
+    #stats { color: #888; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div id="viewDiv"></div>
+
+  <div id="legend">
+    <h3>📻 Radio Types &mdash; Ukraine War Study</h3>
+    <div class="row"><span class="swatch" style="background:#00bcd4"></span> VHF Handheld <span class="badge">(squad, 5–15 km)</span></div>
+    <div class="row"><span class="swatch" style="background:#ff9800"></span> UHF Vehicular <span class="badge">(convoy, 20–50 km)</span></div>
+    <div class="row"><span class="swatch" style="background:#e91e63"></span> HF Long-Range <span class="badge">(HQ, 80–250 km)</span></div>
+    <div class="row"><span class="swatch" style="background:#4caf50"></span> Directional Relay <span class="badge">(observer, 60° cone)</span></div>
+  </div>
+
+  <div id="controls">
+    <label><input type="checkbox" checked data-layer="vhf" /> VHF</label>
+    <label><input type="checkbox" checked data-layer="uhf" /> UHF</label>
+    <label><input type="checkbox" checked data-layer="hf" /> HF</label>
+    <label><input type="checkbox" checked data-layer="directional" /> Directional</label>
+    <label><input type="checkbox" checked data-layer="coverage" /> Coverage</label>
+    <span id="stats">—</span>
+  </div>
+
+  <script src="https://js.arcgis.com/4.29/init.js"></script>
+  <script>
+    require([
+      'esri/Map', 'esri/views/MapView',
+      'esri/layers/StreamLayer', 'esri/layers/GraphicsLayer',
+      'esri/Graphic',
+    ], function (Map, MapView, StreamLayer, GraphicsLayer, Graphic) {
+
+      const RADIO_WS = `ws://${location.host}/ws/radios`;
+      const COVERAGE_WS = `ws://${location.host}/ws/coverage`;
+
+      // ── Radio StreamLayer ─────────────────────────────────────────────
+      const radioLayer = new StreamLayer({
+        url: `${location.origin}/arcgis/rest/services/radios/StreamServer`,
+        purgeOptions: { displayCount: 10000 },
+        symbol: { type: 'simple-marker', color: '#4fc3f7', size: 6, outline: null },
+        renderer: {
+          type: 'unique-value',
+          field: 'type',
+          defaultSymbol: { type: 'simple-marker', color: '#888', size: 5, outline: null },
+          uniqueValueInfos: [
+            { value: 'vhf', symbol: { type: 'simple-marker', color: '#00bcd4', size: 5, outline: null } },
+            { value: 'uhf', symbol: { type: 'simple-marker', color: '#ff9800', size: 6, outline: null } },
+            { value: 'hf', symbol: { type: 'simple-marker', color: '#e91e63', size: 7, outline: null } },
+            { value: 'directional', symbol: { type: 'simple-marker', color: '#4caf50', size: 6, style: 'diamond', outline: null } },
+          ],
+        },
+        popupTemplate: {
+          title: '{TRACKID} — {type}',
+          content: [
+            { type: 'fields', fieldInfos: [
+              { fieldName: 'unit', label: 'Unit' },
+              { fieldName: 'role', label: 'Role' },
+              { fieldName: 'signalStrength', label: 'Signal Strength', format: { digitSeparator: false } },
+              { fieldName: 'interference', label: 'Interference', format: { digitSeparator: false } },
+              { fieldName: 'battery', label: 'Battery', format: { digitSeparator: false } },
+              { fieldName: 'TRACKID', label: 'Radio ID' },
+            ]},
+          ],
+        },
+      });
+
+      // ── Coverage StreamLayer ──────────────────────────────────────────
+      const coverageLayer = new StreamLayer({
+        url: `${location.origin}/arcgis/rest/services/coverage/StreamServer`,
+        purgeOptions: { displayCount: 10000 },
+        symbol: { type: 'simple-fill', color: [79, 195, 247, 0.06], outline: { color: [79, 195, 247, 0.15], width: 0.5 } },
+        renderer: {
+          type: 'unique-value',
+          field: 'type',
+          defaultSymbol: { type: 'simple-fill', color: [136, 136, 136, 0.06], outline: { color: [136, 136, 136, 0.12], width: 0.5 } },
+          uniqueValueInfos: [
+            { value: 'vhf', symbol: { type: 'simple-fill', color: [0, 188, 212, 0.07], outline: { color: [0, 188, 212, 0.2], width: 0.5 } } },
+            { value: 'uhf', symbol: { type: 'simple-fill', color: [255, 152, 0, 0.06], outline: { color: [255, 152, 0, 0.15], width: 0.5 } } },
+            { value: 'hf', symbol: { type: 'simple-fill', color: [233, 30, 99, 0.05], outline: { color: [233, 30, 99, 0.12], width: 0.5 } } },
+            { value: 'directional', symbol: { type: 'simple-fill', color: [76, 175, 80, 0.08], outline: { color: [76, 175, 80, 0.2], width: 0.5 } } },
+          ],
+        },
+        popupTemplate: {
+          title: '{TRACKID} Coverage',
+          content: [
+            { type: 'fields', fieldInfos: [
+              { fieldName: 'coverageAreaKm2', label: 'Coverage (km²)', format: { digitSeparator: true } },
+              { fieldName: 'beamWidth', label: 'Beam Width', format: { digitSeparator: false } },
+              { fieldName: 'type', label: 'Radio Type' },
+            ]},
+          ],
+        },
+      });
+
+      // ── Map ───────────────────────────────────────────────────────────
+      const map = new Map({
+        basemap: { portalItem: { id: '8d91bd39e87359ea1ad0ee68bd68d6fc' } }, // dark gray
+        layers: [coverageLayer, radioLayer],
+      });
+
+      const view = new MapView({
+        container: 'viewDiv',
+        map,
+        center: [31.5, 48.5], // Ukraine center
+        zoom: 6,
+        constraints: { minZoom: 4, maxZoom: 12 },
+      });
+
+      // ── Visibility toggles ────────────────────────────────────────────
+      function updateVisibility() {
+        const isOn = (name) => document.querySelector(`[data-layer="${name}"]:checked`) !== null;
+
+        const showVhf = isOn('vhf');
+        const showUhf = isOn('uhf');
+        const showHf = isOn('hf');
+        const showDir = isOn('directional');
+        const showCov = isOn('coverage');
+
+        // Definition expressions filter by type
+        const visibleTypes = [];
+        if (showVhf) visibleTypes.push("'vhf'");
+        if (showUhf) visibleTypes.push("'uhf'");
+        if (showHf) visibleTypes.push("'hf'");
+        if (showDir) visibleTypes.push("'directional'");
+
+        if (visibleTypes.length > 0 && visibleTypes.length < 4) {
+          const expr = `type IN (${visibleTypes.join(',')})`;
+          radioLayer.definitionExpression = expr;
+          coverageLayer.definitionExpression = expr;
+        } else {
+          radioLayer.definitionExpression = null;
+          coverageLayer.definitionExpression = null;
+        }
+
+        coverageLayer.visible = showCov;
+
+        document.getElementById('stats').textContent =
+          `${radioLayer.graphics.length} radios · ${coverageLayer.graphics.length} zones`;
+      }
+
+      document.querySelectorAll('#controls input').forEach(el => {
+        el.addEventListener('change', updateVisibility);
+      });
+
+      radioLayer.on('graphics-update', updateVisibility);
+      coverageLayer.on('graphics-update', updateVisibility);
+
+      view.when(() => {
+        console.log('Map ready — connecting to WS streams...');
+        // Two seconds after load, the StreamLayer will auto-connect
+        setTimeout(updateVisibility, 2000);
+      });
+
+      // ── Raw WebSocket fallback (if StreamLayer fails) ─────────────────
+      // Kept as a safety net; StreamLayer should auto-connect via metadata.
+      console.log(`Radio stream at ${RADIO_WS}, coverage at ${COVERAGE_WS}`);
+    });
+  </script>
+</body>
+</html>
