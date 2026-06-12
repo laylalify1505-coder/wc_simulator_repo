@@ -64,8 +64,8 @@
       'esri/layers/GraphicsLayer', 'esri/Graphic',
     ], function (Map, MapView, GraphicsLayer, Graphic) {
 
-      const WS_URL = 'ws://' + location.host + '/ws/radios';
-      const WS_COV = 'ws://' + location.host + '/ws/coverage';
+      const WS_URL = 'ws://' + location.host;
+      var rws, cws;
 
       // Symbols by type
       const POINT_SYMS = {
@@ -100,14 +100,11 @@
       var radioMap = {};  // TRACKID → Graphic (for update)
       var covMap = {};
 
-      function connectWS(url, isPolygon) {
-        var ws = new WebSocket(url);
+      function connectWS(isPolygon) {
+        var ws = new WebSocket(WS_URL);
         ws.onopen = function () {
-          // Send handshake
-          ws.send(JSON.stringify({
-            format: 'websocket',
-            spatialReference: { wkid: 4326 },
-          }));
+          // Identify channel first
+          ws.send(JSON.stringify({ channel: isPolygon ? 'coverage' : 'radios' }));
         };
         ws.onmessage = function (e) {
           try {
@@ -211,8 +208,8 @@
         updateStatus();
 
         // Connect WebSockets
-        connectWS(WS_URL, false);
-        connectWS(WS_COV, true);
+        rws = connectWS(false);
+        cws = connectWS(true);
       });
     });
   </script>
