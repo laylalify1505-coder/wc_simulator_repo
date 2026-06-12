@@ -169,8 +169,21 @@
         });
         updateVisibility();
 
-        // Click a radio point → zoom to it
-        view.on('click', function (event) {
+        // Click legend row → zoom to that radio type
+          document.querySelectorAll('#legend .clickable').forEach(function (el) {
+            el.addEventListener('click', function () {
+              var type = el.getAttribute('data-type');
+              var gs = radioLayer.graphics ? radioLayer.graphics.filter(function (g) {
+                return g.attributes && g.attributes.type === type;
+              }) : [];
+              if (gs.length > 0) {
+                view.goTo({ target: gs, zoom: 8 }).catch(function () {});
+              }
+            });
+          });
+
+          // Click a radio point → zoom to it
+          view.on('click', function (event) {
           view.hitTest(event.screenPoint).then(function (response) {
             var hit = response.results && response.results.find(function (r) {
               return r.graphic && r.graphic.layer === radioLayer;
@@ -187,8 +200,8 @@
 
         // Track graphics count
         setInterval(function () {
-          status.textContent = radioLayer.graphics.length + ' radios · ' +
-                               coverageLayer.graphics.length + ' zones';
+          status.textContent = (radioLayer.graphics ? radioLayer.graphics.length : 0) + ' radios · ' +
+                               (coverageLayer.graphics ? coverageLayer.graphics.length : 0) + ' zones';
         }, 2000);
       });
     });
