@@ -19,6 +19,8 @@
     #legend .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
     #legend .swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
     #legend .badge { font-size: 11px; color: #999; }
+    #legend .clickable { cursor: pointer; transition: background 0.15s; border-radius: 4px; padding: 2px 4px; margin: 0 -4px; }
+    #legend .clickable:hover { background: rgba(255,255,255,0.08); }
 
     #controls {
       position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
@@ -41,10 +43,10 @@
 
   <div id="legend">
     <h3>📻 Radio Types &mdash; Ukraine War Study</h3>
-    <div class="row"><span class="swatch" style="background:#00bcd4"></span> VHF Handheld <span class="badge">(squad, 5–15 km)</span></div>
-    <div class="row"><span class="swatch" style="background:#ff9800"></span> UHF Vehicular <span class="badge">(convoy, 20–50 km)</span></div>
-    <div class="row"><span class="swatch" style="background:#e91e63"></span> HF Long-Range <span class="badge">(HQ, 80–250 km)</span></div>
-    <div class="row"><span class="swatch" style="background:#4caf50"></span> Directional Relay <span class="badge">(observer, 60&deg; cone)</span></div>
+    <div class="row clickable" data-type="vhf"><span class="swatch" style="background:#00bcd4"></span> VHF Handheld <span class="badge">(squad, 5–15 km)</span></div>
+    <div class="row clickable" data-type="uhf"><span class="swatch" style="background:#ff9800"></span> UHF Vehicular <span class="badge">(convoy, 20–50 km)</span></div>
+    <div class="row clickable" data-type="hf"><span class="swatch" style="background:#e91e63"></span> HF Long-Range <span class="badge">(HQ, 80–250 km)</span></div>
+    <div class="row clickable" data-type="directional"><span class="swatch" style="background:#4caf50"></span> Directional Relay <span class="badge">(observer, 60&deg; cone)</span></div>
   </div>
 
   <div id="controls">
