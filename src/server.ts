@@ -4,7 +4,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import { Simulator } from './simulator';
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
+const PORT = parseInt(process.env.PORT || '3011',, 10);
 
 const app = express();
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -20,7 +20,7 @@ function buildMeta(req: any, wsPath: string, geomType: string, fields: any[]) {
     geometryType: geomType,
     minScale: 0, maxScale: 0,
     spatialReference: { wkid: 4326 },
-    trackIdField: 'TRACKID',
+    timeInfo: { trackIdField: 'TRACKID', startTimeField: 'TIMESTAMP' },
     fields,
     streamUrls: [{ type: 'websocket', url: `${wsUrl}${wsPath}` }],
   };
