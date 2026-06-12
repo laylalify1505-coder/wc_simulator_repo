@@ -13,14 +13,12 @@
       position: absolute; top: 12px; right: 12px; z-index: 999;
       background: rgba(0,0,0,0.85); color: #eee; padding: 14px 18px;
       border-radius: 8px; font: 13px/1.6 sans-serif; min-width: 200px;
-      pointer-events: none;
     }
     #legend h3 { margin-bottom: 8px; font-size: 14px; color: #fff; }
-    #legend .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+    #legend .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+    #legend .row:hover { background: rgba(255,255,255,0.08); }
     #legend .swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
     #legend .badge { font-size: 11px; color: #999; }
-    #legend .clickable { cursor: pointer; transition: background 0.15s; border-radius: 4px; padding: 2px 4px; margin: 0 -4px; }
-    #legend .clickable:hover { background: rgba(255,255,255,0.08); }
 
     #controls {
       position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
@@ -42,11 +40,11 @@
   <div id="viewDiv"></div>
 
   <div id="legend">
-    <h3>📻 Radio Types &mdash; Ukraine War Study</h3>
-    <div class="row clickable" data-type="vhf"><span class="swatch" style="background:#00bcd4"></span> VHF Handheld <span class="badge">(squad, 5–15 km)</span></div>
-    <div class="row clickable" data-type="uhf"><span class="swatch" style="background:#ff9800"></span> UHF Vehicular <span class="badge">(convoy, 20–50 km)</span></div>
-    <div class="row clickable" data-type="hf"><span class="swatch" style="background:#e91e63"></span> HF Long-Range <span class="badge">(HQ, 80–250 km)</span></div>
-    <div class="row clickable" data-type="directional"><span class="swatch" style="background:#4caf50"></span> Directional Relay <span class="badge">(observer, 60&deg; cone)</span></div>
+    <h3>📻 Radio Types — Ukraine War Study</h3>
+    <div class="row" data-type="vhf"><span class="swatch" style="background:#00bcd4"></span> VHF Handheld <span class="badge">(5–15 km)</span></div>
+    <div class="row" data-type="uhf"><span class="swatch" style="background:#ff9800"></span> UHF Vehicular <span class="badge">(20–50 km)</span></div>
+    <div class="row" data-type="hf"><span class="swatch" style="background:#e91e63"></span> HF Long-Range <span class="badge">(80–250 km)</span></div>
+    <div class="row" data-type="directional"><span class="swatch" style="background:#4caf50"></span> Directional Relay <span class="badge">(60° cone)</span></div>
   </div>
 
   <div id="controls">
@@ -63,146 +61,158 @@
   <script>
     require([
       'esri/Map', 'esri/views/MapView',
-      'esri/layers/StreamLayer',
-    ], function (Map, MapView, StreamLayer) {
+      'esri/layers/GraphicsLayer', 'esri/Graphic',
+    ], function (Map, MapView, GraphicsLayer, Graphic) {
 
-      const ORIGIN = location.origin;
+      const WS_URL = 'ws://' + location.host + '/ws/radios';
+      const WS_COV = 'ws://' + location.host + '/ws/coverage';
 
-      // ── Radio point StreamLayer ─────────────────────────────────────────
-      const radioLayer = new StreamLayer({
-        url: ORIGIN + '/arcgis/rest/services/radios/StreamServer',
-        purgeOptions: { displayCount: 10000 },
-        maxAllowableOffset: 0,
-        renderer: {
-          type: 'unique-value',
-          field: 'type',
-          defaultSymbol: { type: 'simple-marker', color: '#888', size: 5, outline: null },
-          uniqueValueInfos: [
-            { value: 'vhf',        symbol: { type: 'simple-marker', color: '#00bcd4', size: 5, outline: null } },
-            { value: 'uhf',        symbol: { type: 'simple-marker', color: '#ff9800', size: 6, outline: null } },
-            { value: 'hf',         symbol: { type: 'simple-marker', color: '#e91e63', size: 7, outline: null } },
-            { value: 'directional',symbol: { type: 'simple-marker', color: '#4caf50', size: 6, style: 'diamond', outline: null } },
-          ],
-        },
-        popupTemplate: {
-          title: '{TRACKID} — {type}',
-          content: [
-            { type: 'fields', fieldInfos: [
-              { fieldName: 'unit', label: 'Unit' },
-              { fieldName: 'role', label: 'Role' },
-              { fieldName: 'signalStrength', label: 'Signal Strength' },
-              { fieldName: 'interference', label: 'Interference' },
-              { fieldName: 'battery', label: 'Battery' },
-            ]},
-          ],
-        },
-      });
+      // Symbols by type
+      const POINT_SYMS = {
+        vhf:        { type: 'simple-marker', color: '#00bcd4', size: 5, outline: null },
+        uhf:        { type: 'simple-marker', color: '#ff9800', size: 6, outline: null },
+        hf:         { type: 'simple-marker', color: '#e91e63', size: 7, outline: null },
+        directional:{ type: 'simple-marker', color: '#4caf50', size: 6, style: 'diamond', outline: null },
+      };
+      const FILL_SYMS = {
+        vhf:        { type: 'simple-fill', color: [0,188,212,0.07], outline: { color: [0,188,212,0.2], width: 0.5 } },
+        uhf:        { type: 'simple-fill', color: [255,152,0,0.06], outline: { color: [255,152,0,0.15], width: 0.5 } },
+        hf:         { type: 'simple-fill', color: [233,30,99,0.05], outline: { color: [233,30,99,0.12], width: 0.5 } },
+        directional:{ type: 'simple-fill', color: [76,175,80,0.08], outline: { color: [76,175,80,0.2], width: 0.5 } },
+      };
 
-      // ── Coverage polygon StreamLayer ────────────────────────────────────
-      const coverageLayer = new StreamLayer({
-        url: ORIGIN + '/arcgis/rest/services/coverage/StreamServer',
-        purgeOptions: { displayCount: 10000 },
-        maxAllowableOffset: 0,
-        renderer: {
-          type: 'unique-value',
-          field: 'type',
-          defaultSymbol: { type: 'simple-fill', color: [136,136,136,0.06], outline: { color: [136,136,136,0.12], width: 0.5 } },
-          uniqueValueInfos: [
-            { value: 'vhf',        symbol: { type: 'simple-fill', color: [0,188,212,0.07], outline: { color: [0,188,212,0.2], width: 0.5 } } },
-            { value: 'uhf',        symbol: { type: 'simple-fill', color: [255,152,0,0.06], outline: { color: [255,152,0,0.15], width: 0.5 } } },
-            { value: 'hf',         symbol: { type: 'simple-fill', color: [233,30,99,0.05], outline: { color: [233,30,99,0.12], width: 0.5 } } },
-            { value: 'directional',symbol: { type: 'simple-fill', color: [76,175,80,0.08], outline: { color: [76,175,80,0.2], width: 0.5 } } },
-          ],
-        },
-        popupTemplate: {
-          title: '{TRACKID} Coverage',
-          content: [
-            { type: 'fields', fieldInfos: [
-              { fieldName: 'coverageAreaKm2', label: 'Coverage (km²)' },
-              { fieldName: 'beamWidth', label: 'Beam Width' },
-              { fieldName: 'type', label: 'Radio Type' },
-            ]},
-          ],
-        },
-      });
+      // Graphics layers
+      var pointLayer = new GraphicsLayer({ id: 'radios' });
+      var polyLayer = new GraphicsLayer({ id: 'coverage' });
 
-      // ── Map ───────────────────────────────────────────────────────────
-      const map = new Map({
+      var map = new Map({
         basemap: 'dark-gray-vector',
-        layers: [coverageLayer, radioLayer],
+        layers: [polyLayer, pointLayer],
       });
 
-      const view = new MapView({
+      var view = new MapView({
         container: 'viewDiv',
         map,
-        center: [31.5, 48.5], // Ukraine center
+        center: [31.5, 48.5],
         zoom: 6,
       });
 
-      // ── Visibility filtering ─────────────────────────────────────────
-      function updateVisibility() {
-        const isOn = (name) => document.querySelector(`[data-layer="${name}"]:checked`) !== null;
+      var radioMap = {};  // TRACKID → Graphic (for update)
+      var covMap = {};
 
-        const types = [];
-        if (isOn('vhf'))        types.push("'vhf'");
-        if (isOn('uhf'))        types.push("'uhf'");
-        if (isOn('hf'))         types.push("'hf'");
-        if (isOn('directional')) types.push("'directional'");
+      function connectWS(url, isPolygon) {
+        var ws = new WebSocket(url);
+        ws.onopen = function () {
+          // Send handshake
+          ws.send(JSON.stringify({
+            format: 'websocket',
+            spatialReference: { wkid: 4326 },
+          }));
+        };
+        ws.onmessage = function (e) {
+          try {
+            var msg = JSON.parse(e.data);
+            // Skip handshake echo
+            if (msg.error === null) return;
 
-        if (types.length > 0 && types.length < 4) {
-          const expr = `type IN (${types.join(',')})`;
-          radioLayer.definitionExpression = expr;
-          coverageLayer.definitionExpression = expr;
-        } else {
-          radioLayer.definitionExpression = null;
-          coverageLayer.definitionExpression = null;
-        }
-        coverageLayer.visible = isOn('coverage');
+            var geom = msg.geometry;
+            var attrs = msg.attributes || {};
+            var type = attrs.type || 'vhf';
+            var trackId = attrs.TRACKID;
+
+            if (isPolygon) {
+              if (!geom || !geom.rings) return;
+              var existing = covMap[trackId];
+              var sym = FILL_SYMS[type] || FILL_SYMS.vhf;
+              if (existing) {
+                existing.geometry = { type: 'polygon', rings: geom.rings, spatialReference: { wkid: 4326 } };
+                existing.symbol = sym;
+              } else {
+                var g = new Graphic({
+                  geometry: { type: 'polygon', rings: geom.rings, spatialReference: { wkid: 4326 } },
+                  symbol: sym,
+                  attributes: attrs,
+                });
+                polyLayer.add(g);
+                covMap[trackId] = g;
+              }
+            } else {
+              if (!geom || geom.x == null || geom.y == null) return;
+              var existing = radioMap[trackId];
+              var sym = POINT_SYMS[type] || POINT_SYMS.vhf;
+              if (existing) {
+                existing.geometry = { type: 'point', x: geom.x, y: geom.y, spatialReference: { wkid: 4326 } };
+                existing.symbol = sym;
+                existing.attributes = attrs;
+              } else {
+                var g = new Graphic({
+                  geometry: { type: 'point', x: geom.x, y: geom.y, spatialReference: { wkid: 4326 } },
+                  symbol: sym,
+                  attributes: attrs,
+                });
+                pointLayer.add(g);
+                radioMap[trackId] = g;
+              }
+            }
+            updateStatus();
+          } catch (err) { /* skip */ }
+        };
+        ws.onerror = function () { console.warn('WS error:', url); };
+        ws.onclose = function () {
+          setTimeout(function () { connectWS(url, isPolygon); }, 2000);
+        };
+        return ws;
       }
 
-      view.when(function () {
-        var status = document.getElementById('status');
-        status.textContent = 'Map loaded ✓';
+      function updateStatus() {
+        document.getElementById('status').textContent =
+          Object.keys(radioMap).length + ' radios · ' +
+          Object.keys(covMap).length + ' zones';
+      }
 
+      // Visibility
+      function updateVisibility() {
+        var isOn = function (n) { return document.querySelector('[data-layer="' + n + '"]:checked') !== null; };
+        pointLayer.visible = isOn('vhf') || isOn('uhf') || isOn('hf') || isOn('directional');
+        polyLayer.visible = isOn('coverage');
+      }
+
+      // Click legend → zoom
+      document.querySelectorAll('#legend .row').forEach(function (el) {
+        el.addEventListener('click', function () {
+          var type = el.getAttribute('data-type');
+          var gs = pointLayer.graphics.filter(function (g) {
+            return g.attributes && g.attributes.type === type;
+          });
+          if (gs.length) view.goTo({ target: gs, zoom: 8 });
+        });
+      });
+
+      // Click point → zoom
+      view.on('click', function (e) {
+        view.hitTest(e.screenPoint).then(function (r) {
+          var hit = r.results && r.results.find(function (h) {
+            return h.graphic && h.graphic.layer === pointLayer;
+          });
+          if (hit) {
+            var g = hit.graphic;
+            var pt = g.geometry;
+            view.goTo({ center: [pt.longitude, pt.latitude], zoom: 10 });
+          }
+        });
+      });
+
+      view.when(function () {
+        document.getElementById('status').textContent = 'Connecting WS…';
         document.querySelectorAll('#controls input').forEach(function (el) {
           el.addEventListener('change', updateVisibility);
         });
         updateVisibility();
+        updateStatus();
 
-        // Click legend row → zoom to that radio type
-          document.querySelectorAll('#legend .clickable').forEach(function (el) {
-            el.addEventListener('click', function () {
-              var type = el.getAttribute('data-type');
-              var gs = radioLayer.graphics ? radioLayer.graphics.filter(function (g) {
-                return g.attributes && g.attributes.type === type;
-              }) : [];
-              if (gs.length > 0) {
-                view.goTo({ target: gs, zoom: 8 }).catch(function () {});
-              }
-            });
-          });
-
-          // Click a radio point → zoom to it
-          view.on('click', function (event) {
-          view.hitTest(event.screenPoint).then(function (response) {
-            var hit = response.results && response.results.find(function (r) {
-              return r.graphic && r.graphic.layer === radioLayer;
-            });
-            if (hit) {
-              var g = hit.graphic;
-              var pt = g.geometry;
-              var attrs = g.attributes;
-              var zoomLevel = attrs && attrs.type === 'hf' ? 8 : 10;
-              view.goTo({ center: [pt.longitude, pt.latitude], zoom: zoomLevel });
-            }
-          });
-        });
-
-        // Track graphics count
-        setInterval(function () {
-          status.textContent = (radioLayer.graphics ? radioLayer.graphics.length : 0) + ' radios · ' +
-                               (coverageLayer.graphics ? coverageLayer.graphics.length : 0) + ' zones';
-        }, 2000);
+        // Connect WebSockets
+        connectWS(WS_URL, false);
+        connectWS(WS_COV, true);
       });
     });
   </script>
