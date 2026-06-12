@@ -167,6 +167,22 @@
         });
         updateVisibility();
 
+        // Click a radio point → zoom to it
+        view.on('click', function (event) {
+          view.hitTest(event.screenPoint).then(function (response) {
+            var hit = response.results && response.results.find(function (r) {
+              return r.graphic && r.graphic.layer === radioLayer;
+            });
+            if (hit) {
+              var g = hit.graphic;
+              var pt = g.geometry;
+              var attrs = g.attributes;
+              var zoomLevel = attrs && attrs.type === 'hf' ? 8 : 10;
+              view.goTo({ center: [pt.longitude, pt.latitude], zoom: zoomLevel });
+            }
+          });
+        });
+
         // Track graphics count
         setInterval(function () {
           status.textContent = radioLayer.graphics.length + ' radios · ' +
