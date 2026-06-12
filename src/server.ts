@@ -6,12 +6,10 @@ import { Simulator } from './simulator';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
-// ── Express ─────────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// ── ArcGIS StreamLayer metadata endpoints ───────────────────────────────────
-function buildStreamMetadata(req: any, wsPath: string, geomType: string, fields: any[]) {
+function buildMeta(req: any, wsPath: string, geomType: string, fields: any[]) {
   const baseUrl = `${req.protocol}://${req.get('host')}`;
   const wsUrl = baseUrl.replace(/^http/, 'ws');
   return {
@@ -20,16 +18,8 @@ function buildStreamMetadata(req: any, wsPath: string, geomType: string, fields:
     capabilities: 'Streaming',
     type: 'StreamServer',
     geometryType: geomType,
-    minScale: 0,
-    maxScale: 0,
+    minScale: 0, maxScale: 0,
     spatialReference: { wkid: 4326 },
-    timeInfo: {
-      timeExtent: [0, 9999999999999],
-      timeReference: { timeZone: 'UTC' },
-      trackIdField: 'TRACKID',
-      startTimeField: 'TIMESTAMP',
-      drawTime: 0,
-    },
     fields,
     streamUrls: [{ type: 'websocket', url: `${wsUrl}${wsPath}` }],
   };
@@ -57,54 +47,49 @@ const COVERAGE_FIELDS = [
 ];
 
 app.get('/arcgis/rest/services/radios/StreamServer', (req, res) => {
-  res.json(buildStreamMetadata(req, '/ws/radios', 'esriGeometryPoint', RADIO_FIELDS));
+  res.json(buildMeta(req, '/ws/radios', 'esriGeometryPoint', RADIO_FIELDS));
 });
 
 app.get('/arcgis/rest/services/coverage/StreamServer', (req, res) => {
-  res.json(buildStreamMetadata(req, '/ws/coverage', 'esriGeometryPolygon', COVERAGE_FIELDS));
+  res.json(buildMeta(req, '/ws/coverage', 'esriGeometryPolygon', COVERAGE_FIELDS));
 });
 
-// ── HTTP Server ────────────────────────────────────────────────────────────
+// ── Server ──────────────────────────────────────────────────────────────────
 const server = http.createServer(app);
 
-// ── WebSockets ──────────────────────────────────────────────────────────────
-function createWsHandler(path: string, name: string): WebSocketServer {
-  const wss = new WebSocketServer({ server, path });
+function createWs(path: string, name: string): WebSocketServer {
+  const wss = new WebSocketServer({ server, path, perMessageDeflate: false });
   wss.on('connection', (ws) => {
-    console.log(`${name} WS client connected (total: ${wss.clients.size})`);
+    console.log(`${name} WS connected (total: ${wss.clients.size})`);
     ws.on('message', (msg) => {
       try {
         const obj = JSON.parse(msg.toString());
-        // ArcGIS StreamLayer handshake: echo back with error: null
         if (obj.format && obj.spatialReference) {
           obj.error = null;
           ws.send(JSON.stringify(obj));
         }
-      } catch { /* ignore */ }
+      } catch { /* */ }
     });
   });
   return wss;
 }
 
-const wssRadios = createWsHandler('/ws/radios', 'Radio');
-const wssCoverage = createWsHandler('/ws/coverage', 'Coverage');
+const rws = createWs('/ws/radios', 'Radio');
+const cws = createWs('/ws/coverage', 'Coverage');
 
-function broadcastAll(wss: WebSocketServer, json: string) {
-  for (const client of wss.clients) {
-    if (client.readyState === WebSocket.OPEN) client.send(json);
-  }
+function bcast(wss: WebSocketServer, json: string) {
+  for (const c of wss.clients) if (c.readyState === WebSocket.OPEN) c.send(json);
 }
 
-// ── Start Simulator ────────────────────────────────────────────────────────
 const sim = new Simulator();
 sim.onTick((features, coverages) => {
-  for (const f of features) broadcastAll(wssRadios, JSON.stringify(f));
-  for (const c of coverages) broadcastAll(wssCoverage, JSON.stringify(c));
+  for (const f of features) bcast(rws, JSON.stringify(f));
+  for (const c of coverages) bcast(cws, JSON.stringify(c));
 });
 
 server.listen(PORT, () => {
-  console.log(`🚀 WC Simulator running at http://localhost:${PORT}`);
-  console.log(`   Radio WS: ws://localhost:${PORT}/ws/radios`);
-  console.log(`   Coverage WS: ws://localhost:${PORT}/ws/coverage`);
+  console.log(`🚀 WC Simulator @ http://localhost:${PORT}`);
+  console.log(`   Radio: ws://localhost:${PORT}/ws/radios`);
+  console.log(`   Coverage: ws://localhost:${PORT}/ws/coverage`);
   sim.start();
 });
