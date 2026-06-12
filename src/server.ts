@@ -20,6 +20,7 @@ function buildMeta(req: any, wsPath: string, geomType: string, fields: any[]) {
     geometryType: geomType,
     minScale: 0, maxScale: 0,
     spatialReference: { wkid: 4326 },
+    trackIdField: 'TRACKID',
     fields,
     streamUrls: [{ type: 'websocket', url: `${wsUrl}${wsPath}` }],
   };
